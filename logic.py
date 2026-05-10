@@ -69,39 +69,65 @@ class Content:
                 if img[i][j] > 0:
                     img[i][j] = WHITE
 
+        Image.fromarray(img, "L").show()
+
         # search for the "islands". store arrays of those pixels to create faces of the 3D model later.
-        accounted = np.zeros((width, height), dtype=bool)
+        accounted = np.zeros((height, width), dtype=bool)
         islands = []
-        for i in range(width):
-            for j in range(height):
+        triangleCount = 0
+        # These "-1" are a horrible hack to avoid accesing memory off the image segment, but since we know there is no white segment all over the border of the image, it'll work
+        for i in range(height - 1):
+            for j in range(width - 1):
+                print(f"{i}/{height}, {j}/{width}")
                 if not accounted[i][j]:
                     accounted[i][j] = True
                     if img[i][j] == WHITE:
+                        print("Island")
                         i2 = i
                         j2 = j
                         island = []
                         # 8-way cheking to follow the bar
                         while True:  # Here, in a more general context, there would be needed restrictions to not try to access memory off the memory segment of image, but knowing the nature of the code
+                            print(f"(island number: {len(islands)} ({i2} - {j2})")
                             # images we know a white segment will never be found on the last or first pixel, neither vertical nor horizontal
-                            if img[i2][j2 + 1] == WHITE:
-                                i2 += 1
-                            elif img[i2 + 1][j2 + 1] == WHITE:
+                            if (
+                                img[i2][j2 + 1] == WHITE and not accounted[i2][j2 + 1]
+                            ):  # →
+                                j2 += 1
+                            elif (
+                                img[i2 + 1][j2 + 1] == WHITE
+                                and not accounted[i2 + 1][j2 + 1]
+                            ):  # ↘
                                 i2 += 1
                                 j2 += 1
-                            elif img[i2 + 1][j2] == WHITE:
-                                j2 += 1
-                            elif img[i2 + 1][j2 - 1] == WHITE:
+                            elif (
+                                img[i2 + 1][j2] == WHITE and not accounted[i2 + 1][j2]
+                            ):  # ↓
+                                i2 += 1
+                            elif (
+                                img[i2 + 1][j2 - 1] == WHITE
+                                and not accounted[i2 + 1][j2 - 1]
+                            ):  # ↙
                                 i2 += 1
                                 j2 -= 1
-                            elif img[i2][j2 - 1] == WHITE:
+                            elif (
+                                img[i2][j2 - 1] == WHITE and not accounted[i2][j2 - 1]
+                            ):  # ←
                                 j2 -= 1
-                            elif img[i2 - 1][j2 - 1] == WHITE:
-                                i2 += 1
-                                j2 -= 1
-                            elif img[i2 - 1][j2] == WHITE:
+                            elif (
+                                img[i2 - 1][j2 - 1] == WHITE
+                                and not accounted[i2 - 1][j2 - 1]
+                            ):  # ↖
                                 i2 -= 1
                                 j2 -= 1
-                            elif img[i2 - 1][j2 + 1] == WHITE:
+                            elif (
+                                img[i2 - 1][j2] == WHITE and not accounted[i2 - 1][j2]
+                            ):  # ↑
+                                i2 -= 1
+                            elif (
+                                img[i2 - 1][j2 + 1] == WHITE
+                                and not accounted[i2 - 1][j2 + 1]
+                            ):  # ↗
                                 i2 -= 1
                                 j2 += 1
 
@@ -110,42 +136,36 @@ class Content:
 
                             if i2 == i and j2 == j:
                                 break  # if the current pixel is equal to initial pixel
+
+                        # accounting "inside" the bars so the program skips it entirely
+                        accounted[i : i2 + 1, j : j2 + 1] = True
+                        island = np.array(island)
+                        triangleCount += len(island) * 2
                         islands.append(island)
 
-        faces = []
+        faces = np.empty((triangleCount, 3, 3), dtype=np.int16)
+        counter = 0
         for i in range(len(islands)):
-            startIsland = islands[i]
-            for j in range(islands[i].len()):
-                if j < islands[i].len() - 1:
-                    faces.append(
-                        (
-                            (*islands[i][j], 0),
-                            (*islands[i][j], HEIGHT),
-                            (*islands[i][j + 1], 0),
-                        )
-                    )
-                    faces.append(
-                        (
-                            (*islands[i][j], 0),
-                            (*islands[i][j], HEIGHT),
-                            (*islands[i][j + 1], HEIGHT),
-                        )
-                    )
+            startPoint = islands[i][0]
+            for j in range(len(islands[i])):
+                if j < islands[i].len():
+                    faces[counter, 0] = [*islands[i][j], 0]
+                    faces[counter, 1] = [*islands[i][j], HEIGHT]
+                    faces[counter, 2] = [*islands[i][j + 1], 0]
+
+                    faces[counter + 1, 0] = [*islands[i][j], HEIGHT]
+                    faces[counter + 1, 1] = [*islands[i][j + 1], 0]
+                    faces[counter + 1, 2] = [*islands[i][j + 1], HEIGHT]
+
                 else:
-                    faces.append(
-                        (
-                            (*islands[i][j], 0),
-                            (*islands[i][j], HEIGHT),
-                            (*startIsland, 0),
-                        )
-                    )
-                    faces.append(
-                        (
-                            (*islands[i][j], 0),
-                            (*islands[i][j], HEIGHT),
-                            (*startIsland, HEIGHT),
-                        )
-                    )
+                    faces[counter, 0] = [*islands[i][j], 0]
+                    faces[counter, 1] = [*islands[i][j], HEIGHT]
+                    faces[counter, 2] = [*startPoint, 0]
+
+                    faces[counter + 1, 0] = [*islands[i][j], HEIGHT]
+                    faces[counter + 1, 1] = [*startPoint, 0]
+                    faces[counter + 1, 2] = [*startPoint, HEIGHT]
+                counter += 2
 
         faces = np.array(faces)
         modelMesh = mesh.Mesh(np.zeros(faces.shape[0], dtype=mesh.Mesh.dtype))
