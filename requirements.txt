@@ -1,0 +1,6 @@
+numpy==2.4.4
+Pillow==12.2.0
+PySide6==6.10.3
+PySide6==6.11.0
+Requests==2.33.1
+stl==0.0.3
