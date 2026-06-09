@@ -12,6 +12,7 @@ def btnSearch(searchTerm):
 # def btnSend(reference, URI):
 def btnSend():
     logic.send(main.referenceInput.text(), main.URIInput.text(), 1)
+    print(main.referenceInput.text())
 
 
 class Window(QWidget):

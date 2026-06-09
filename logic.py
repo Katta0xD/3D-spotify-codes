@@ -3,9 +3,10 @@ import numpy as np
 from PIL import Image
 from io import BytesIO
 from stl import Mesh, mesh
+import trimesh
 
 WHITE = 255  # i don't think this is necessary, since the range 0-255 is yield by PIL.Image.convert
-HEIGHT = 10
+HEIGHT = 100  # 10
 
 
 def search(searchTerm, reference):
@@ -32,14 +33,14 @@ class Content:
         file = open("config.txt", "r")
         lines = file.readlines()
         savePath = lines[1].split("=")[1].replace("\n", "")
-        self.saveImagePath = f"{savePath}/images/"
-        self.saveModelPath = f"{savePath}/models/"
+        self.imageSavePath = f"{savePath}/images/"
+        self.modelSavePath = f"{savePath}/models/"
 
         self.image: Image.Image
         self.model: mesh.Mesh
 
     def getCodeImage(self):
-        size = "1280"  # width pixels. higher: 2047, lower: 256
+        size = "2047"  # width pixels. higher: 2047, lower: 256
         format = "png"  # {png, jpeg, svg}
         bgColor = "000000"  # hexadecimal color
         barColor = "white"  # {white, black}
@@ -56,7 +57,7 @@ class Content:
         self.image = Image.open(BytesIO(response.content))
 
     def saveImage(self):
-        self.image.save(f"{self.saveImagePath}{self.reference}{self.id}.png", "PNG")
+        self.image.save(f"{self.imageSavePath}{self.reference}.png", "PNG")
 
     def create3DModel(self, style):
         def isInnerPixel(image, x, y):
@@ -71,7 +72,7 @@ class Content:
             return isInner
 
         # convert the image into a mtrix of -1/WHITE values
-        img = self.image.crop((256, 0, 1280, 320))
+        img = self.image.crop((497, 0, 1950, 510))
         img = img.convert("L")
         img = np.array(img)
         height, width = img.shape
@@ -79,14 +80,23 @@ class Content:
             for j in range(width):
                 if img[i][j] > 1:
                     img[i][j] = WHITE
-
+                else:
+                    img[i][j] = 0
         Image.fromarray(img, "L").show()
 
-        # search for the "bars". store arrays of those pixels to create faces of the 2D model later.
+        # search for the "bars". store arrays of those pixels to create faces of the 3D model later.
         accounted = np.zeros((height, width), dtype=bool)
         bars = np.empty(23, dtype=object)
+        barData = {
+            "": None,
+            "": None,
+            "": None,
+            "": None,
+        }
+        bars_data = np.empty(23, dtype=object)
         triangleCount = 0
         barCount = 0
+
         # These "-1" are a horrible hack to avoid accesing memory off the image segment, when i2 = height or j2 = width. but since we know there is no white segment all over the border of the image, it'll work
         for i in range(height - 1):
             for j in range(width - 1):
@@ -174,55 +184,67 @@ class Content:
             startPoint = bars[i][0]
             for j in range(len(bars[i])):
                 if j < len(bars[i]) - 1:
-                    # print(f"bars[{i}][{j}]")
-                    # if j > 400:
-                    #    breakpoint()
+                    nextPoint = bars[i][j + 1]
+                else:
+                    nextPoint = startPoint
+
+                faces[counter]["vectors"] = [
+                    [*bars[i][j], 0],
+                    [*bars[i][j], HEIGHT],
+                    [*nextPoint, 0],
+                ]
+                faces[counter + 1]["vectors"] = [
+                    [*bars[i][j], HEIGHT],
+                    [*nextPoint, 0],
+                    [*nextPoint, HEIGHT],
+                ]
+
+                """if j < len(bars[i]) - 1:
                     faces[counter]["vectors"] = [
                         [*bars[i][j], 0],
                         [*bars[i][j], HEIGHT],
                         [*bars[i][j + 1], 0],
                     ]
-
                     faces[counter + 1]["vectors"] = [
-                        [*bars[i][j], 0],
+                        [*bars[i][j], HEIGHT],
                         [*bars[i][j + 1], 0],
                         [*bars[i][j + 1], HEIGHT],
                     ]
-                    """
-                    faces[counter, 0] = [*bars[i][j], 0]
-                    faces[counter, 1] = [*bars[i][j], HEIGHT]
-                    faces[counter, 2] = [*bars[i][j + 1], 0]
-
-                    faces[counter + 1, 0] = [*bars[i][j], HEIGHT]
-                    faces[counter + 1, 1] = [*bars[i][j + 1], 0]
-                    faces[counter + 1, 2] = [*bars[i][j + 1], HEIGHT]
-                    """
-                else:
+                else: #Ultimo paso
                     faces[counter]["vectors"] = [
                         [*bars[i][j], 0],
                         [*bars[i][j], HEIGHT],
                         [*startPoint, 0],
                     ]
-
                     faces[counter + 1]["vectors"] = [
-                        [*bars[i][j], 0],
+                        [*bars[i][j], HEIGHT],
                         [*startPoint, 0],
                         [*startPoint, HEIGHT],
-                    ]
-                    """
-                    faces[counter, 0] = [*bars[i][j], 0]
-                    faces[counter, 1] = [*bars[i][j], HEIGHT]
-                    faces[counter, 2] = [*startPoint, 0]
+                    ]"""
 
-                    faces[counter + 1, 0] = [*bars[i][j], HEIGHT]
-                    faces[counter + 1, 1] = [*startPoint, 0] 
-                    faces[counter + 1, 2] = [*startPoint, HEIGHT] 
-                    """
-                # counter += 1
                 counter += 2
 
         modelMesh = mesh.Mesh(faces)
-        self.model = modelMesh
+        modelMesh.save(f"{self.modelSavePath}{self.reference}.stl")
+
+        roundedMesh = trimesh.load(f"{self.modelSavePath}{self.reference}.stl")
+
+        vertices, faces = trimesh.remesh.subdivide(
+            roundedMesh.vertices, roundedMesh.faces
+        )
+        roundedMesh2 = trimesh.Trimesh(vertices=vertices, faces=faces)
+        roundedMesh2.fix_normals()
+        roundedMesh2.merge_vertices()
+        roundedMesh2.remove_infinite_values()
+
+        roundedMesh2.export(f"{self.modelSavePath}{self.reference}.rounded2.stl")
+
+        roundedMesh3 = trimesh.smoothing.filter_laplacian(
+            roundedMesh2, lamb=0.5, iterations=7
+        )
+
+        roundedMesh3.export(f"{self.modelSavePath}{self.reference}.rounded3.stl")
 
     def save3DModel(self):
-        self.model.save("model.stl")
+        print()
+        # self.model.save(f"{self.modelSavePath}{self.reference}.stl")
