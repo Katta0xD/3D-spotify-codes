@@ -1,11 +1,13 @@
 import requests
+import trimesh
+import cv2
+import meshlib.mrmeshpy as mr
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 from io import BytesIO
-from stl import mesh
 
 WHITE = 255  # i don't think this is necessary, since the range 0-255 is yield by PIL.Image.convert
-HEIGHT = 10
+HEIGHT = 100  # 10
 
 
 def search(searchTerm, reference):
@@ -22,24 +24,37 @@ def send(reference, URI, style):
 
 class Content:
     def __init__(self, reference, URI):
-        self.reference = reference
 
-        URI = URI.split("?")[0]
-        terms = URI.split("/")
-        self.contentType = terms[3]
-        self.id = terms[4]
+        if reference.find("<") + reference.find(">") + reference.find(
+            ":"
+        ) + reference.find('"') + reference.find("\\") + reference.find(
+            "/"
+        ) + reference.find("|") + reference.find("?") + reference.find("*") > -(9):
+            raise ValueError("Bad reference")
+        else:
+            self.reference = reference
 
+        try:
+            URI = URI.split("?")[0]
+            terms = URI.split("/")
+            self.contentType = terms[3]
+            self.id = terms[4]
+        except Exception:
+            raise ValueError("Bad link")
         file = open("config.txt", "r")
         lines = file.readlines()
         savePath = lines[1].split("=")[1].replace("\n", "")
-        self.saveImagePath = f"{savePath}/images/"
-        self.saveModelPath = f"{savePath}/models/"
+        if savePath.endswith("/"):
+            savePath = savePath[:-1]
+        self.imageSavePath = f"{savePath}/images/"
+        self.modelSavePath = f"{savePath}/models/"
 
         self.image: Image.Image
-        self.model = None
+        self.modelImage: Image.Image
+        self.model: mr.Mesh
 
     def getCodeImage(self):
-        size = "1280"  # width pixels. higher: 2047, lower: 256
+        size = "2047"  # width pixels. higher: 2047, lower: 256
         format = "png"  # {png, jpeg, svg}
         bgColor = "000000"  # hexadecimal color
         barColor = "white"  # {white, black}
@@ -49,128 +64,88 @@ class Content:
         print(
             f"https://scannables.scdn.co/uri/plain/{format}/{bgColor}/{barColor}/{size}/spotify:{self.contentType}:{self.id}"
         )
-
-        response = requests.get(
-            f"https://scannables.scdn.co/uri/plain/{format}/{bgColor}/{barColor}/{size}/spotify:{self.contentType}:{self.id}"
-        )
-        self.image = Image.open(BytesIO(response.content))
+        try:
+            response = requests.get(
+                f"https://scannables.scdn.co/uri/plain/{format}/{bgColor}/{barColor}/{size}/spotify:{self.contentType}:{self.id}"
+            )
+            self.image = Image.open(BytesIO(response.content)).convert("L")
+        except Exception:
+            raise ValueError("Bad Link")
 
     def saveImage(self):
-        self.image.save(f"{self.saveImagePath}{self.reference}{self.id}.png", "PNG")
+        self.image.save(f"{self.imageSavePath}{self.reference}-code.png", "PNG")
 
-    def create3DModel(self, style):
-        # convert the image into a mtrix of 0/WHITE values
-        img = self.image.crop((256, 0, 1280, 320))
-        img = img.convert("L")
-        img = np.array(img)
-        height, width = img.shape
-        for i in range(height):
-            for j in range(width):
-                if img[i][j] > 0:
-                    img[i][j] = WHITE
+    def create3DModel(self, style=1):
+        def modelFromImage(pilImg: Image.Image):
 
-        Image.fromarray(img, "L").show()
+            npImg = np.array(pilImg)
+            mrImage = mr.Image()
+            height, width = npImg.shape
+            mrImage.resolution = mr.Vector2i(width, height)
+            for x in npImg.flatten():
+                mrImage.pixels.append(mr.Color(x, x, x))
 
-        # search for the "islands". store arrays of those pixels to create faces of the 3D model later.
-        accounted = np.zeros((height, width), dtype=bool)
-        islands = []
-        triangleCount = 0
-        # These "-1" are a horrible hack to avoid accesing memory off the image segment, but since we know there is no white segment all over the border of the image, it'll work
-        for i in range(height - 1):
-            for j in range(width - 1):
-                print(f"{i}/{height}, {j}/{width}")
-                if not accounted[i][j]:
-                    accounted[i][j] = True
-                    if img[i][j] == WHITE:
-                        print("Island")
-                        i2 = i
-                        j2 = j
-                        island = []
-                        # 8-way cheking to follow the bar
-                        while True:  # Here, in a more general context, there would be needed restrictions to not try to access memory off the memory segment of image, but knowing the nature of the code
-                            print(f"(island number: {len(islands)} ({i2} - {j2})")
-                            # images we know a white segment will never be found on the last or first pixel, neither vertical nor horizontal
-                            if (
-                                img[i2][j2 + 1] == WHITE and not accounted[i2][j2 + 1]
-                            ):  # →
-                                j2 += 1
-                            elif (
-                                img[i2 + 1][j2 + 1] == WHITE
-                                and not accounted[i2 + 1][j2 + 1]
-                            ):  # ↘
-                                i2 += 1
-                                j2 += 1
-                            elif (
-                                img[i2 + 1][j2] == WHITE and not accounted[i2 + 1][j2]
-                            ):  # ↓
-                                i2 += 1
-                            elif (
-                                img[i2 + 1][j2 - 1] == WHITE
-                                and not accounted[i2 + 1][j2 - 1]
-                            ):  # ↙
-                                i2 += 1
-                                j2 -= 1
-                            elif (
-                                img[i2][j2 - 1] == WHITE and not accounted[i2][j2 - 1]
-                            ):  # ←
-                                j2 -= 1
-                            elif (
-                                img[i2 - 1][j2 - 1] == WHITE
-                                and not accounted[i2 - 1][j2 - 1]
-                            ):  # ↖
-                                i2 -= 1
-                                j2 -= 1
-                            elif (
-                                img[i2 - 1][j2] == WHITE and not accounted[i2 - 1][j2]
-                            ):  # ↑
-                                i2 -= 1
-                            elif (
-                                img[i2 - 1][j2 + 1] == WHITE
-                                and not accounted[i2 - 1][j2 + 1]
-                            ):  # ↗
-                                i2 -= 1
-                                j2 += 1
+            # Extrude Image to create a mesh
+            distanceMap = mr.convertImageToDistanceMap(mrImage, 0)
+            polyline = mr.distanceMapTo2DIsoPolyline(distanceMap, isoValue=127)
+            mesh = mr.triangulateContours(polyline.contours())
+            mr.addBaseToPlanarMesh(mesh, zOffset=30)
 
-                            accounted[i2][j2] = True
-                            island.append((i2, j2))
+            return mesh
 
-                            if i2 == i and j2 == j:
-                                break  # if the current pixel is equal to initial pixel
+        def style1():
+            leftExtention = 170
+            ringRadius = leftExtention / 2
 
-                        # accounting "inside" the bars so the program skips it entirely
-                        accounted[i : i2 + 1, j : j2 + 1] = True
-                        island = np.array(island)
-                        triangleCount += len(island) * 2
-                        islands.append(island)
+            canvasW, canvasE = self.image.size
+            canvasW = canvasW + leftExtention
+            image = Image.new("L", (canvasW, canvasE), 255)
+            draw = ImageDraw.Draw(image)
+            radius = canvasE // 2
+            draw.rounded_rectangle(
+                (leftExtention, 0, canvasW, canvasE),
+                radius=radius,
+                fill=0,
+            )
 
-        faces = np.empty((triangleCount, 3, 3), dtype=np.int16)
-        counter = 0
-        for i in range(len(islands)):
-            startPoint = islands[i][0]
-            for j in range(len(islands[i])):
-                if j < islands[i].len():
-                    faces[counter, 0] = [*islands[i][j], 0]
-                    faces[counter, 1] = [*islands[i][j], HEIGHT]
-                    faces[counter, 2] = [*islands[i][j + 1], 0]
+            imgLogo = self.image.crop((150, 187, 372, 331))
+            imgLogo = ImageOps.invert(imgLogo)
+            imgLogo.tobytes()
+            imgLogo = ImageOps.scale(imgLogo, 1.6)
+            image.paste(imgLogo, (86 + leftExtention, 140))
 
-                    faces[counter + 1, 0] = [*islands[i][j], HEIGHT]
-                    faces[counter + 1, 1] = [*islands[i][j + 1], 0]
-                    faces[counter + 1, 2] = [*islands[i][j + 1], HEIGHT]
+            imgCode = self.image.crop((511, 102, 1944, 408))
+            image.paste(imgCode, (511 + leftExtention, 102))
 
-                else:
-                    faces[counter, 0] = [*islands[i][j], 0]
-                    faces[counter, 1] = [*islands[i][j], HEIGHT]
-                    faces[counter, 2] = [*startPoint, 0]
+            image.show()
 
-                    faces[counter + 1, 0] = [*islands[i][j], HEIGHT]
-                    faces[counter + 1, 1] = [*startPoint, 0]
-                    faces[counter + 1, 2] = [*startPoint, HEIGHT]
-                counter += 2
+            imgRing = Image.new("L", (canvasW, canvasE), color=255)
+            draw = ImageDraw.Draw(imgRing)
+            draw.circle((leftExtention, canvasE / 2), ringRadius, 0)
+            maskRing = ImageOps.invert(imgRing)
+            draw.circle((leftExtention, canvasE / 2), ringRadius * (2 / 3), 255)
 
-        faces = np.array(faces)
-        modelMesh = mesh.Mesh(np.zeros(faces.shape[0], dtype=mesh.Mesh.dtype))
-        modelMesh.vectors = faces
-        self.model = modelMesh
+            image.paste(imgRing, mask=maskRing)
+
+            image = ImageOps.expand(
+                image, 10, 255
+            )  # This is so the the countours() method can find the whole objetct
+
+            image.show()
+            return image
+
+        def style2():
+            print()
+
+        match style:
+            case 1:
+                self.modelImage = style1()
+                self.model = modelFromImage(self.modelImage)
+            case 2:
+                style2()
+            case _:
+                print("this shouldn't have happened")
 
     def save3DModel(self):
-        self.model.save("model.stl")
+        mr.saveMesh(self.model, f"{self.modelSavePath}{self.reference}.stl")
+        self.modelImage.save(f"{self.imageSavePath}{self.reference}-model.png", "PNG")
