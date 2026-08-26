@@ -8,7 +8,7 @@ rename config.txt.template as config.txt
 ```bash
 mv config.txt.template config.txt
 ```
-use your favorite text editor to edit the file and specify a path to save the .stl files
+use your favorite text editor to edit the file and specify a path to save the .stl files after ```Save Path=```
 
 clone this repo and move in
 ```bash
