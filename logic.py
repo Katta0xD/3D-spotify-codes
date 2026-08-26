@@ -1,6 +1,4 @@
 import requests
-import trimesh
-import cv2
 import meshlib.mrmeshpy as mr
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
