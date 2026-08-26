@@ -5,19 +5,31 @@ Tool to create different 3D models of Spotify barcodes ready to print
 
 ## How to use 
 clone this repo and move in
-    git clone https://github.com/Katta0xD/3D-spotify-codes && cd 3D-spotify-codes
+```bash
+git clone https://github.com/Katta0xD/3D-spotify-codes && cd 3D-spotify-codes
+```
 
 create a virtual environment to install dependencies
-    mkdir venv && python -m venv venv
+```bash
+mkdir venv && python -m venv venv
+```
 
 activate the virtual environment
-    source venv/bin/activate
+```bash
+source venv/bin/activate
+```
 
-install the dependencies 
-    pip install --prefer-binary -r requirements.txt
+install the dependencies
+```bash
+pip install --prefer-binary -r requirements.txt
+```
 
 execute the program
-    python3 gui.py
+```bash
+python3 gui.py
+```
 or
-    chmod +x ./gui.py
-    ./gui.py
+```bash
+chmod +x ./gui.py
+./gui.py
+```
