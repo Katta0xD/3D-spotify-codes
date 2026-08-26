@@ -20,6 +20,26 @@ jobs:
         
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install Qt/XCB dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libgl1-mesa-glx \
+          libegl1-mesa \
+          libxkbcommon-x11-0 \
+          libxcb-cursor0 \
+          libxcb-icccm4 \
+          libxcb-image0 \
+          libxcb-keysyms1 \
+          libxcb-randr0 \
+          libxcb-render-util0 \
+          libxcb-shape0 \
+          libxcb-xfixes0 \
+          libxcb-xinerama0 \
+          libxcb-xkb1 \
+          libtiff5-dev
     
     - name: Set up Python 3.11
       uses: actions/setup-python@v3
